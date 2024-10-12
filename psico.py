@@ -1,31 +1,37 @@
-import streamlit as st # type: ignore
-from langchain_core.messages import AIMessage, HumanMessage
-from langchain_openai import ChatOpenAI
-from dotenv import load_dotenv
-from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from PIL import Image
-# para usar o gemini
-from langchain_google_genai import ChatGoogleGenerativeAI,HarmCategory,HarmBlockThreshold
-import time
-import requests
-
-from io import BytesIO
-from gtts import gTTS
-
+""" Psicoterapeuta Virtual STS """
 import os
-import uuid
+import time
+from io import BytesIO
+# import uuid
+
+import streamlit as st # type: ignore
+from streamlit_js_eval import streamlit_js_eval
+
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser  #,  JsonOutputParser
+from langchain_google_genai import ChatGoogleGenerativeAI,HarmCategory,HarmBlockThreshold
+# from langchain_openai import ChatOpenAI
+
+from dotenv import load_dotenv
+
+from PIL import Image
+
+# para usar o gemini
+# import requests
+
+from gtts import gTTS
 from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
 
-audio_saida_bytes = BytesIO()
-
-# para usar o grog para transcrição de audios para texto
 from groq import Groq
 
 # Ler o arquivo .env
 load_dotenv()
 
+audio_saida_bytes = BytesIO()
+
+# para usar o grog para transcrição de audios para texto
 client = Groq()
 
 # configuração do eleven labs texto para audio
@@ -34,6 +40,15 @@ client_eleven = ElevenLabs(api_key=ELEVENLABS_API_KEY,)
 
 # Configuração da página
 st.set_page_config(page_title="Eu te Escuto", page_icon="🤖", layout="wide")
+
+# função para salvar e encerrar a sessão
+def salvar_e_encerrar():
+    """ salvar a conversa """
+    with open("saida.txt", "w",encoding="utf-8") as f:
+        if "chat_history" in st.session_state:
+            f.write(str(st.session_state['chat_history']))  # Salva o conteúdo da variável
+    st.session_state.clear()  # Limpa o estado da sessão
+    streamlit_js_eval(js_expressions="parent.window.location.reload()")   # Reinicializa a página
 
 # Função para obter a resposta do bot
 def get_response(user_query, chat_history):
@@ -74,12 +89,11 @@ def get_response(user_query, chat_history):
     frequence_penalty=2,
     )
     chain = prompt | llm | StrOutputParser()
-    response = chain.invoke({
+    resp = chain.invoke({
         "chat_history": chat_history,
         "user_question": user_query,
     })
-    #return response["text"]
-    return response
+    return resp
 
 # Estrutura do cabeçalho
 st.markdown(
@@ -102,7 +116,7 @@ query = None
 # Entrada do usuário no rodapé
 with st.sidebar:
     # Carregar a imagem
-    image_path = "./glenda.jpg"  # Substitua pelo caminho correto
+    image_path = "./glenda.jpg" # Substitua pelo caminho correto 
     image = Image.open(image_path)
     st.image(image,caption = 'Dra Glenda',width=250, use_column_width=False)
     audio_input = st.experimental_audio_input("Registre sua mensagem em áudio ...")
@@ -122,10 +136,10 @@ with st.sidebar:
             language="pt",  # Optional
             temperature=0.0  # Optional
         )
-        print("transcricao obtida",transcription.text)
-            # Print the transcription text
         audio_query = transcription.text
     texto_query = st.chat_input("Digite a sua mensagem aqui ...", key="user_input")
+    if st.button("Encerrar"):
+        salvar_e_encerrar()
 if texto_query:
     query = texto_query
 elif audio_query:
@@ -181,5 +195,3 @@ if query:
                 audio_saida_bytes.write(chunk)
         audio_saida_bytes.seek(0)
         st.audio(audio_saida_bytes, format='audio/mp3',autoplay=True)
-
-    

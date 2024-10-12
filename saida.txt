@@ -1,0 +1,4 @@
+[HumanMessage(content='olá', additional_kwargs={}, response_metadata={}), 
+AIMessage(content='Olá. Seja bem-vindo. Meu nome é Glenda. Como posso ajudá-lo hoje?', additional_kwargs={}, response_metadata={}), 
+HumanMessage(content='Se eu respirar fundo me sentirei melhor?', additional_kwargs={}, response_metadata={}), 
+AIMessage(content='Entendo que você esteja se sentindo sobrecarregado. Acredita que respirar fundo pode ajudar a acalmá-lo? Conte-me mais sobre quando e como se sente assim. Estou aqui para ouvir e apoiá-lo no que for necessário.', additional_kwargs={}, response_metadata={})]
