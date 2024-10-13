@@ -16,9 +16,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI,HarmCategory,HarmBlock
 from dotenv import load_dotenv
 
 from PIL import Image
-
-# para usar o gemini
-# import requests
+import requests
 
 from gtts import gTTS
 from elevenlabs import VoiceSettings
@@ -43,10 +41,29 @@ st.set_page_config(page_title="Eu te Escuto", page_icon="🤖", layout="wide")
 
 # função para salvar e encerrar a sessão
 def salvar_e_encerrar():
-    """ salvar a conversa """
-    with open("saida.txt", "w",encoding="utf-8") as f:
-        if "chat_history" in st.session_state:
-            f.write(str(st.session_state['chat_history']))  # Salva o conteúdo da variável
+    """    salvar a conversa
+     
+      MODIFICAR ESTA PARTE PARA SALVAR DIRETAMENTE NO BANCO E ELIMINAR A NECESSIDADE DO FASTAPI
+       
+        
+     """
+    url = "http://localhost:8010/salvar/"
+    parametros = {
+        "historico": str(st.session_state.chat_history),
+    }
+    headers = {
+        "accept": "application/json"
+    }
+    try:
+        # Envia os dados via POST no formato JSON
+        resposta = requests.post(url, headers=headers, params=parametros, data="")
+        # Verifica se a requisição foi bem-sucedida
+        if resposta.status_code == 200:
+            print("Dados enviados com sucesso!")
+        else:
+            print(f"Erro: {resposta.status_code}") 
+    except requests.exceptions.RequestException as e:
+        print(f"Erro na requisição: {e}")
     st.session_state.clear()  # Limpa o estado da sessão
     streamlit_js_eval(js_expressions="parent.window.location.reload()")   # Reinicializa a página
 
