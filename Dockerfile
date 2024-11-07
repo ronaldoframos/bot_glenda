@@ -4,7 +4,9 @@ WORKDIR /
 # Copia os arquivos do diretório atual para o contêiner
 COPY . .
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && \ 
+    apt-get install -y supervisor && \
+    apt-get install -y \
     build-essential \
     curl \
     software-properties-common \
