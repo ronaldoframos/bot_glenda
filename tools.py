@@ -1,69 +1,40 @@
-"""  Registro de consultas  """
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+""" Ferramentas para acesso ao banco de dados e o LLM """
 import sqlite3
 from dotenv import load_dotenv
 import re,json
+import logging
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser  #,  JsonOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI,HarmCategory,HarmBlockThreshold
 
-#
-# carregar variaveis de ambiente
-#
+from globals import *
+
+logger = logging.getLogger()
+
 load_dotenv()
 
-PRODUCAO = False
-
-if PRODUCAO:
-    app = FastAPI(
-    docs_url=None, # Disable docs (Swagger UI)
-    redoc_url=None, # Disable redoc
-)
-else:
-    app = FastAPI()
-
-# Configurar o CORS
-origins = ["*"]  # Permitir todas as origens, você pode ajustar isso conforme necessário
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=1,
-    allow_methods=["*"], 
-    allow_headers=["*"],
-)
-
-
 # Conecta ao banco de dados SQLite (será criado se não existir)
-conn = sqlite3.connect("dados.db")
-cursor = conn.cursor()
+try:
+    conn = sqlite3.connect(BANCO_DADOS)
+    cursor = conn.cursor()
+    # Cria a tabela, se ainda não existir
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS registros (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL,
+        situacao TEXT NOT NULL,
+        dialogos TEXT NOT NULL,
+        laudo TEXT NOT NULL
+    )
+    """)
+    conn.commit()
+finally:
+    conn.close()
 
-# Cria a tabela, se ainda não existir
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS registros (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    situacao TEXT NOT NULL,
-    dialogos TEXT NOT NULL,
-    laudo TEXT NOT NULL
-)
-""")
-conn.commit()
-
-# Modelo de dados com Pydantic para validar entrada
-class Registro(BaseModel):
-    nome: str
-    situacao: str
-    dialogos: str
-    laudo: str
-
-# Função para extrair mensagens usando regex
 def interpretar_mensagens_brutas(texto):
-    # Expressão regular para capturar o conteúdo dentro de content='...'
+    """  Expressão regular para capturar o conteúdo dentro de content='...' """
     padrao = r"content='(.*?)'"  # Captura o conteúdo entre aspas simples
     mensagens = re.findall(padrao, texto, re.DOTALL)  # Captura múltiplas linhas
     return mensagens
@@ -86,7 +57,7 @@ def extrair_json_de_string(string: str):
     except json.JSONDecodeError as e:
         print(f"Erro ao decodificar JSON: {e}")
         return None
-
+    
 def diagnostico_psicologico(dialogo : str):
     """ fazer o diagnostico psicologico do paciente que terminou a consulta"""
     
@@ -98,7 +69,7 @@ def diagnostico_psicologico(dialogo : str):
     trastorno moderado ou ausência de sintomas". Você deve considerar a situação como crítica quando a pessoa se manifestar com alta 
     tendência a ansiedade, depressão ou até mesmo ideias suicidas. Em outra forma considere se se trata de situação mediana, leve ou ausencias de sitomas de transtornos o que faria que a situação 
     pudesse ser considerada como transtorno médio, transtorno moderado ou ausência de sintomas. |Finalmente adicione ao json um campo chamado nome 
-    incluindo o nome do paciente caso tenha sido mencionado.
+    incluindo o nome do paciente caso tenha sido mencionado. Não repita o seu prório nome nas perguntas sequentes a sua introdução.
 
     texto do diálogo: {texto}.
     
@@ -112,33 +83,59 @@ def diagnostico_psicologico(dialogo : str):
     frequence_penalty=2,
     )
     chain = prompt | llm | StrOutputParser()
-    resp = chain.invoke({
-        "texto": dialogo,
-    })
+    try:
+        resp = chain.invoke({"texto": dialogo,})
+    except Exception as e:
+        resp = "No momento estou sem condições de continuar a conversa. Tente novamente em seguida"
+        logger.error(str(e))
     return resp
 
-# Rota para receber os dados via POST
-@app.post("/salvar/")
-async def salvar_registro(historico: str):
+def salvar_registro(historico: str):
     """ corigir isso aqui para calcular os campos necessários """
     mensagens = "\n".join(interpretar_mensagens_brutas(historico))
     json_resposta = extrair_json_de_string(diagnostico_psicologico(mensagens))
-    try:
-        # Insere os dados no banco de dados
-        cursor.execute(""" INSERT INTO registros (nome, situacao, dialogos, laudo) VALUES (?, ?, ?, ?) """, 
+    if json_resposta["nome"]==None:
+        json_resposta["nome"] = "Anônimo"
+    with sqlite3.connect(BANCO_DADOS) as conn:
+        conn.execute(""" INSERT INTO registros (nome, situacao, dialogos, laudo) VALUES (?, ?, ?, ?) """, 
                        (json_resposta["nome"], json_resposta["situacao"], mensagens, json_resposta["laudo"]))
-        conn.commit()
-        return {"mensagem": "Dados salvos com sucesso!"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao salvar dados: {str(e)}")
+        return (True,"")
+    return (False, f"Erro: {e}") 
 
-# Rota para listar todos os registros
-@app.get("/registros/")
-async def listar_registros():
-    cursor.execute("SELECT * FROM registros")
-    registros = cursor.fetchall()
-    return {"registros": registros}
+def listar_registros():
+    """ retornar os registros gravados no banco de dados """
+    with sqlite3.connect(BANCO_DADOS) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM registros")
+        registros = cursor.fetchall()
+        return {"registros": registros}
+    return None
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("registro:app", host="0.0.0.0",reload=True,port=8010)
+def remover_texto_entre_asteriscos(texto):
+    return re.sub(r'\*.*?\*', '', texto)
+
+def remover_human_message(texto):
+    # Expressão regular para remover 'HumanMessage(...)', ignorando maiúsculas/minúsculas
+    return re.sub(r'humanmessage\([^)]*\)', '', texto, flags=re.IGNORECASE)
+
+def remover_resposta_chatbot(texto):
+    # Expressão regular para remover 'ChatbotMessage(...)', ignorando maiúsculas/minúsculas
+    return re.sub(r'Resposta do Chatbot\([^)]*\)', '', texto, flags=re.IGNORECASE)   
+
+def remover_glenda_inicio(texto):
+    # Expressão regular para remover 'glenda' do início da string, ignorando maiúsculas e minúsculas
+    return re.sub(r'^glenda\s*', '', texto, flags=re.IGNORECASE)
+
+def tratar_texto(response_text):
+    response_text = response_text.replace(']','')
+    response_text = response_text.replace('[','')
+    response_text = response_text.replace('{','')
+    response_text = response_text.replace('}','')
+    response_text = response_text.replace(':','')
+    response_text = response_text.replace('ofensa','')
+    trecho1 = "(aqui você irá colocar a variável com o nome do paciente)"
+    response_text = response_text.replace(trecho1,'')   
+    response_text = remover_human_message(response_text) 
+    response_text = remover_resposta_chatbot(response_text)
+    response_text = remover_glenda_inicio(response_text)    
+    return remover_texto_entre_asteriscos(response_text)

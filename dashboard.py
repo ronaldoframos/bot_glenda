@@ -2,21 +2,17 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 import altair as alt
+from globals import *
 
 st.set_page_config(page_title="Visualização de Dados", layout="wide")
 
-# Conectar ao banco de dados SQLite
-def conectar_banco():
-    """conectar o banco"""
-    return sqlite3.connect("dados.db")
-
 def carregar_dados():
     """carregar dados do banco """
-    conexao = conectar_banco()
-    query = "SELECT * FROM registros"  # Nome correto da tabela
-    df = pd.read_sql_query(query, conexao)
-    conexao.close()
-    return df
+    with sqlite3.connect(BANCO_DADOS) as conn:
+        query = "SELECT * FROM registros"  # Nome correto da tabela
+        df = pd.read_sql_query(query, conn)
+        return df
+    return None
 
 # Exibir detalhes de um registro selecionado
 def exibir_detalhes(linha):

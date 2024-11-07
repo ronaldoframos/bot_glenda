@@ -24,6 +24,9 @@ from elevenlabs.client import ElevenLabs
 
 from groq import Groq
 
+from tools import *
+from globals import *
+
 # Ler o arquivo .env
 load_dotenv()
 
@@ -39,64 +42,31 @@ client_eleven = ElevenLabs(api_key=ELEVENLABS_API_KEY,)
 # Configuração da página
 st.set_page_config(page_title="Eu te Escuto", page_icon="🤖", layout="wide")
 
+success_placeholder = st.empty()
+
 # função para salvar e encerrar a sessão
 def salvar_e_encerrar():
-    """    salvar a conversa
-     
-      MODIFICAR ESTA PARTE PARA SALVAR DIRETAMENTE NO BANCO E ELIMINAR A NECESSIDADE DO FASTAPI
-       
-        
-     """
-    url = "http://localhost:8010/salvar/"
-    parametros = {
-        "historico": str(st.session_state.chat_history),
-    }
-    headers = {
-        "accept": "application/json"
-    }
-    try:
-        # Envia os dados via POST no formato JSON
-        resposta = requests.post(url, headers=headers, params=parametros, data="")
-        # Verifica se a requisição foi bem-sucedida
-        if resposta.status_code == 200:
-            print("Dados enviados com sucesso!")
-        else:
-            print(f"Erro: {resposta.status_code}") 
-    except requests.exceptions.RequestException as e:
-        print(f"Erro na requisição: {e}")
+    """    salvar a conversa """
+    resultado_salvar = salvar_registro(str(st.session_state.chat_history))
+    if resultado_salvar[0]:
+        success_placeholder.success("Dados salvos com sucesso! 🚀 ✅")
+        #st.success("Dados salvos com sucesso! 🚀 ✅")
+    else:
+        success_placeholder.error(f"Erro na gravação {resultado_salvar[1]}")
+        #st.error(f"Erro na gravação {resultado_salvar[1]}")
     st.session_state.clear()  # Limpa o estado da sessão
     streamlit_js_eval(js_expressions="parent.window.location.reload()")   # Reinicializa a página
 
 # Função para obter a resposta do bot
 def get_response(user_query, chat_history):
     """ função de consult ao llm """
-    template = """
-
-    **Prompt:**
-
-    "Você é um chatbot treinado para atuar como uma médica psicoterapeuta. Seu nome é Glenda. Seu objetivo é ouvir com empatia, fazer perguntas abertas e ajudar o usuário a explorar seus sentimentos e pensamentos de forma segura e não julgadora. Sempre mostre compreensão, mantenha a confidencialidade e forneça suporte emocional. Se um problema específico precisar de intervenção de um profissional de saúde mental, encoraje o usuário a buscar ajuda de um psicoterapeuta qualificado."
-
-    **Exemplos de Respostas:**
-
-    1. Usuário: "Estou me sentindo muito ansioso ultimamente e não sei o que fazer."
-    Chatbot: "Sinto muito que você esteja passando por isso. Pode me contar um pouco mais sobre o que tem causado essa ansiedade? Estou aqui para ouvir."
-
-    2. Usuário: "Tenho tido muitos conflitos no trabalho e isso está me afetando."
-    Chatbot: "Entendo que conflitos no trabalho podem ser muito estressantes. Como esses conflitos têm impactado você pessoalmente? Vamos explorar isso juntos."
-
-    3. Usuário: "Não consigo parar de me sentir triste e desmotivado."
-    Chatbot: "Lamento que você esteja se sentindo assim. O que você acha que pode estar contribuindo para esses sentimentos? Falar sobre isso pode ajudar a esclarecer."
-
-    4. Usuário: "Estou lutando para lidar com a perda de um ente querido."
-    Chatbot: "A perda de alguém querido é extremamente dolorosa. Você gostaria de compartilhar mais sobre essa pessoa e como você está se sentindo? Estou aqui para ouvir e apoiar você."
-
-    ---      
-    Os dados para gerar a resposta são:
-        
-    História da conversa: {chat_history}
-
-    Pergunta do usuário: {user_question}.
-    """
+    #
+    # definindo qual prompt usar
+    #
+    arquivo_template = 'prompt_glenda_dialogo.txt'
+    #arquivo_template = 'prompt_giselle_dialogo.txt'
+    with open(arquivo_template) as arquivo:
+        template = arquivo.read()    
     prompt = ChatPromptTemplate.from_template(template)
     #llm = ChatOpenAI()
     llm = ChatGoogleGenerativeAI(
@@ -172,13 +142,8 @@ if query:
             time.sleep(5)
     else:
         resposta = "Não entendi colega. Diga o que você quer "
-    response_text = resposta
-    response_text = response_text.replace(']','')
-    response_text = response_text.replace('[','')
-    response_text = response_text.replace('{','')
-    response_text = response_text.replace('}','')
-    response_text = response_text.replace(':','')
-    response_text = response_text.replace('ofensa','')
+    response_text = tratar_texto(resposta)
+    print("Mensagem recebida e tratada: ", response_text)
     st.session_state.chat_history.append(AIMessage(content=response_text))
     for message in st.session_state.chat_history:
         if isinstance(message, AIMessage):
