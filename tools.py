@@ -126,7 +126,20 @@ def remover_glenda_inicio(texto):
     # Expressão regular para remover 'glenda' do início da string, ignorando maiúsculas e minúsculas
     return re.sub(r'^glenda\s*', '', texto, flags=re.IGNORECASE)
 
+def remove_chatbot_inicio(frase):
+    """
+    Remove a palavra 'Chatbot' do início de uma frase, 
+    caso esteja presente, mantendo o restante da frase intacto.
+
+    :param frase: A frase a ser processada (string).
+    :return: A frase sem 'Chatbot' no início.
+    """
+    if frase.lower().startswith("chatbot"):
+        return frase[len("Chatbot"):].lstrip()
+    return frase
+
 def tratar_texto(response_text):
+    response_text = remove_chatbot_inicio(response_text)
     response_text = response_text.replace(']','')
     response_text = response_text.replace('[','')
     response_text = response_text.replace('{','')

@@ -3,6 +3,7 @@ import os
 import time
 from io import BytesIO
 # import uuid
+import concurrent.futures
 
 import streamlit as st # type: ignore
 from streamlit_js_eval import streamlit_js_eval
@@ -11,7 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser  #,  JsonOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI,HarmCategory,HarmBlockThreshold
-# from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI
 
 from dotenv import load_dotenv
 
@@ -39,6 +40,8 @@ client = Groq()
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 client_eleven = ElevenLabs(api_key=ELEVENLABS_API_KEY,)
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 # Configuração da página
 st.set_page_config(page_title="Eu te Escuto", page_icon="🤖", layout="wide")
 
@@ -58,7 +61,8 @@ def salvar_e_encerrar():
     streamlit_js_eval(js_expressions="parent.window.location.reload()")   # Reinicializa a página
 
 # Função para obter a resposta do bot
-def get_response(user_query, chat_history):
+
+def get_response(user_query, chat_history, gpt=True):
     """ função de consult ao llm """
     #
     # definindo qual prompt usar
@@ -68,13 +72,16 @@ def get_response(user_query, chat_history):
     with open(arquivo_template) as arquivo:
         template = arquivo.read()    
     prompt = ChatPromptTemplate.from_template(template)
-    #llm = ChatOpenAI()
-    llm = ChatGoogleGenerativeAI(
-    model="gemini-pro",
-    safety_settings={HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE},
-    temperature=1.0,
-    frequence_penalty=2,
-    )
+    if gpt:
+        print("Consultado gpt")
+        llm = ChatOpenAI(model="gpt-3.5-turbo", api_key=OPENAI_API_KEY, temperature=1.0)
+    else:
+        print("consultando gemini")
+        llm = ChatGoogleGenerativeAI(
+        model="gemini-pro",
+        safety_settings={HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE},
+        temperature=1.0,
+        frequence_penalty=2,)
     chain = prompt | llm | StrOutputParser()
     resp = chain.invoke({
         "chat_history": chat_history,
@@ -96,6 +103,9 @@ st.markdown(
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
+if "gpt" not in st.session_state:
+    st.session_state.gpt = True
+
 audio_query = None
 texto_query = None
 query = None
@@ -109,7 +119,7 @@ with st.sidebar:
     audio_input = st.experimental_audio_input("Registre sua mensagem em áudio ...")
     opcao_sintese_audio = st.radio(
         "Síntese de Áudio:",
-        ("Google", "Eleven Labs")
+        ("Google", "Eleven Labs","Muda")
     )
     print("processando audio")
     if audio_input:
@@ -133,13 +143,22 @@ elif audio_query:
     query = audio_query
 if query:
     st.session_state.chat_history.append(HumanMessage(content=query))
-    for i in range(10):
-        try:
-            resposta = get_response(query, st.session_state.chat_history)
-            break
-        except Exception as e:
-            print(f"Erro na resposta {e} ")
-            time.sleep(5)
+    for i in range(4):
+        #try:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(get_response, query, st.session_state.chat_history, st.session_state.gpt)
+            #resposta = get_response(query, st.session_state.chat_history, st.session_state.gpt)
+            try:
+                resposta = future.result(timeout=5)  # Retorna o resultado se a função concluir no tempo limite
+                st.session_state.gpt = not st.session_state.gpt
+                break
+            except concurrent.futures.TimeoutError:
+                print("Tempo limite excedido na chamada ")
+                st.session_state.gpt = not st.session_state.gpt
+                continue
+            except Exception as e:
+                print(f"Erro na resposta {e} ")
+                time.sleep(1)
     else:
         resposta = "Não entendi colega. Diga o que você quer "
     response_text = tratar_texto(resposta)
@@ -177,3 +196,5 @@ if query:
                 audio_saida_bytes.write(chunk)
         audio_saida_bytes.seek(0)
         st.audio(audio_saida_bytes, format='audio/mp3',autoplay=True)
+    else:
+        pass
